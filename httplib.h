@@ -450,9 +450,15 @@ using socket_t = int;
 
 #include <random>
 
-//#include <regex>
+#if __GNUC__ >= 7
 
-#include <boost/regex.hpp>
+  #include <regex>
+
+#else
+
+  #include <boost/regex.hpp>
+
+#endif
 
 #include <set>
 
@@ -866,7 +872,15 @@ using Headers = std::multimap<std::string, std::string, detail::ci>;
 
 using Params = std::multimap<std::string, std::string>;
 
-using Match = boost::smatch;
+#if __GNUC__ >= 7
+
+  using Match = std::smatch;
+
+#else
+
+  using Match = boost::smatch;
+
+#endif
 
 
 
@@ -1612,45 +1626,25 @@ class RegexMatcher : public MatcherBase {
 
 public:
 
-    RegexMatcher(const std::string &pattern) : regex_(pattern) {}
+  RegexMatcher(const std::string &pattern) : regex_(pattern) {}
 
 
 
-    bool match(Request &request) const override; //{
-
-    //     std::string request_str;
-
-
-
-    //     request_str += request.method + " " + request.path + " HTTP/1.1\r\n";
-
-
-
-    //     for (const auto& header : request.headers) {
-
-    //         request_str += header.first + ": " + header.second + "\r\n";
-
-    //     }
-
-
-
-    //     if (!request.body.empty()) {
-
-    //         request_str += "\r\n" + request.body;
-
-    //     }
-
-
-
-    //     return boost::regex_match(request_str, regex_);
-
-    // }
+  bool match(Request &request) const override;
 
 
 
 private:
 
+  #if __GNUC__ >= 7
+
+    std::regex regex_;
+
+  #else
+
     boost::regex regex_;
+
+  #endif
 
 };
 
@@ -3686,7 +3680,15 @@ inline ssize_t Stream::write_format(const char *fmt, const Args &...args) {
 
   const auto bufsiz = 2048;
 
-  std::array<char, bufsiz> buf = {0};
+  #if __GNUC__ >= 7
+
+    std::array<char, bufsiz> buf{};
+
+  #else
+
+    std::array<char, bufsiz> buf = {0};
+
+  #endif
 
 
 
@@ -5078,6 +5080,22 @@ inline void read_file(const std::string &path, std::string &out) {
 
 
 
+#if __GNUC__ >= 7
+
+inline std::string file_extension(const std::string &path) {
+
+  std::smatch m;
+
+  static auto re = std::regex("\\.([a-zA-Z0-9]+)$");
+
+  if (std::regex_search(path, m, re)) { return m[1].str(); }
+
+  return std::string();
+
+}
+
+#else
+
 inline std::string file_extension(const std::string &path) {
 
     boost::smatch m;
@@ -5094,7 +5112,7 @@ inline std::string file_extension(const std::string &path) {
 
 }
 
-
+#endif
 
 
 
@@ -6158,7 +6176,45 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
     auto sock = socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
 
-   if (sock != INVALID_SOCKET) {
+  #if __GNUC__ >= 7
+
+    if (sock != INVALID_SOCKET) {
+
+      sockaddr_un addr{};
+
+      addr.sun_family = AF_UNIX;
+
+      std::copy(host.begin(), host.end(), addr.sun_path);
+
+
+
+      hints.ai_addr = reinterpret_cast<sockaddr *>(&addr);
+
+      hints.ai_addrlen = static_cast<socklen_t>(
+
+          sizeof(addr) - sizeof(addr.sun_path) + addrlen);
+
+
+
+      fcntl(sock, F_SETFD, FD_CLOEXEC);
+
+      if (socket_options) { socket_options(sock); }
+
+
+
+      if (!bind_or_connect(sock, hints)) {
+
+        close_socket(sock);
+
+        sock = INVALID_SOCKET;
+
+      }
+
+    }
+
+  #else
+
+    if (sock != INVALID_SOCKET) {
 
         sockaddr_un addr;
 
@@ -6202,9 +6258,7 @@ socket_t create_socket(const std::string &host, const std::string &ip, int port,
 
     }
 
-
-
-
+  #endif
 
     return sock;
 
@@ -6730,7 +6784,15 @@ inline bool get_ip_and_port(const struct sockaddr_storage &addr,
 
 
 
-  std::array<char, NI_MAXHOST> ipstr = {0};
+  #if __GNUC__ >= 7
+
+    std::array<char, NI_MAXHOST> ipstr{};
+
+  #else
+
+    std::array<char, NI_MAXHOST> ipstr = {0};
+
+  #endif
 
   if (getnameinfo(reinterpret_cast<const struct sockaddr *>(&addr), addr_len,
 
@@ -6873,6 +6935,176 @@ inline constexpr unsigned int operator"" _t(const char *s, size_t l) {
 } // namespace udl
 
 
+
+ #if __GNUC__ >= 7
+
+inline std::string
+
+find_content_type(const std::string &path,
+
+                  const std::map<std::string, std::string> &user_data,
+
+                  const std::string &default_content_type) {
+
+  auto ext = file_extension(path);
+
+
+
+  auto it = user_data.find(ext);
+
+  if (it != user_data.end()) { return it->second; }
+
+
+
+  using udl::operator""_t;
+
+
+
+  switch (str2tag(ext)) {
+
+  default: return default_content_type;
+
+
+
+  case "css"_t: return "text/css";
+
+  case "csv"_t: return "text/csv";
+
+  case "htm"_t:
+
+  case "html"_t: return "text/html";
+
+  case "js"_t:
+
+  case "mjs"_t: return "text/javascript";
+
+  case "txt"_t: return "text/plain";
+
+  case "vtt"_t: return "text/vtt";
+
+
+
+  case "apng"_t: return "image/apng";
+
+  case "avif"_t: return "image/avif";
+
+  case "bmp"_t: return "image/bmp";
+
+  case "gif"_t: return "image/gif";
+
+  case "png"_t: return "image/png";
+
+  case "svg"_t: return "image/svg+xml";
+
+  case "webp"_t: return "image/webp";
+
+  case "ico"_t: return "image/x-icon";
+
+  case "tif"_t: return "image/tiff";
+
+  case "tiff"_t: return "image/tiff";
+
+  case "jpg"_t:
+
+  case "jpeg"_t: return "image/jpeg";
+
+
+
+  case "mp4"_t: return "video/mp4";
+
+  case "mpeg"_t: return "video/mpeg";
+
+  case "webm"_t: return "video/webm";
+
+
+
+  case "mp3"_t: return "audio/mp3";
+
+  case "mpga"_t: return "audio/mpeg";
+
+  case "weba"_t: return "audio/webm";
+
+  case "wav"_t: return "audio/wave";
+
+
+
+  case "otf"_t: return "font/otf";
+
+  case "ttf"_t: return "font/ttf";
+
+  case "woff"_t: return "font/woff";
+
+  case "woff2"_t: return "font/woff2";
+
+
+
+  case "7z"_t: return "application/x-7z-compressed";
+
+  case "atom"_t: return "application/atom+xml";
+
+  case "pdf"_t: return "application/pdf";
+
+  case "json"_t: return "application/json";
+
+  case "rss"_t: return "application/rss+xml";
+
+  case "tar"_t: return "application/x-tar";
+
+  case "xht"_t:
+
+  case "xhtml"_t: return "application/xhtml+xml";
+
+  case "xslt"_t: return "application/xslt+xml";
+
+  case "xml"_t: return "application/xml";
+
+  case "gz"_t: return "application/gzip";
+
+  case "zip"_t: return "application/zip";
+
+  case "wasm"_t: return "application/wasm";
+
+  }
+
+}
+
+
+
+inline bool can_compress_content_type(const std::string &content_type) {
+
+  using udl::operator""_t;
+
+
+
+  auto tag = str2tag(content_type);
+
+
+
+  switch (tag) {
+
+  case "image/svg+xml"_t:
+
+  case "application/javascript"_t:
+
+  case "application/json"_t:
+
+  case "application/xml"_t:
+
+  case "application/protobuf"_t:
+
+  case "application/xhtml+xml"_t: return true;
+
+
+
+  default:
+
+    return !content_type.rfind("text/", 0) && tag != "text/event-stream"_t;
+
+  }
+
+}
+
+#else
 
 inline std::string
 
@@ -7060,6 +7292,8 @@ inline bool can_compress_content_type(const std::string &content_type) {
 
 }
 
+#endif
+
 
 
 
@@ -7182,9 +7416,15 @@ inline bool gzip_compressor::compress(const char *data, size_t data_length,
 
     auto ret = Z_OK;
 
+    #if __GNUC__ >= 7
 
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
 
-    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+    #else
+
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+
+    #endif
 
     do {
 
@@ -7292,9 +7532,15 @@ inline bool gzip_decompressor::decompress(const char *data, size_t data_length,
 
     data += strm_.avail_in;
 
+    #if __GNUC__ >= 7
 
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
 
-    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+    #else
+
+      std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+
+    #endif
 
     while (strm_.avail_in > 0 && ret == Z_OK) {
 
@@ -7370,7 +7616,15 @@ inline bool brotli_compressor::compress(const char *data, size_t data_length,
 
                                         bool last, Callback callback) {
 
-  std::array<uint8_t, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+  #if __GNUC__ >= 7
+
+    std::array<uint8_t, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
+
+  #else
+
+    std::array<uint8_t, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+
+  #endif
 
 
 
@@ -7480,9 +7734,15 @@ inline bool brotli_decompressor::decompress(const char *data,
 
   decoder_r = BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT;
 
+  #if __GNUC__ >= 7
 
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff{};
 
-  std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+  #else
+
+    std::array<char, CPPHTTPLIB_COMPRESSION_BUFSIZ> buff = {0};
+
+  #endif
 
   while (decoder_r == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
 
@@ -8736,7 +8996,69 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
 
 #endif
 
-  //std::string s = "bytes=100-200,300-400";
+#if __GNUC__ >= 7
+
+  static auto re_first_range = std::regex(R"(bytes=(\d*-\d*(?:,\s*\d*-\d*)*))");
+
+  std::smatch m;
+
+  if (std::regex_match(s, m, re_first_range)) {
+
+    auto pos = static_cast<size_t>(m.position(1));
+
+    auto len = static_cast<size_t>(m.length(1));
+
+    auto all_valid_ranges = true;
+
+    split(&s[pos], &s[pos + len], ',', [&](const char *b, const char *e) {
+
+      if (!all_valid_ranges) { return; }
+
+      static auto re_another_range = std::regex(R"(\s*(\d*)-(\d*))");
+
+      std::cmatch cm;
+
+      if (std::regex_match(b, e, cm, re_another_range)) {
+
+        ssize_t first = -1;
+
+        if (!cm.str(1).empty()) {
+
+          first = static_cast<ssize_t>(std::stoll(cm.str(1)));
+
+        }
+
+
+
+        ssize_t last = -1;
+
+        if (!cm.str(2).empty()) {
+
+          last = static_cast<ssize_t>(std::stoll(cm.str(2)));
+
+        }
+
+
+
+        if (first != -1 && last != -1 && first > last) {
+
+          all_valid_ranges = false;
+
+          return;
+
+        }
+
+        ranges.emplace_back(std::make_pair(first, last));
+
+      }
+
+    });
+
+    return all_valid_ranges;
+
+  }
+
+#else
 
   boost::smatch m;
 
@@ -8803,6 +9125,8 @@ inline bool parse_range_header(const std::string &s, Ranges &ranges) try {
       return all_valid_ranges;
 
   }
+
+#endif
 
   return false;
 
@@ -8940,77 +9264,149 @@ public:
 
           } else {
 
-            static const boost::regex re_content_disposition(
+            #if __GNUC__ >= 7
 
-                R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
+              static const std::regex re_content_disposition(
 
-                boost::regex_constants::icase);
+                  R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
 
-
-
-
-
-            boost::smatch m;
-
-            if (boost::regex_match(header, m, re_content_disposition)) {
-
-              Params params;
-
-              parse_disposition_params(m[1], params);
+                  std::regex_constants::icase);
 
 
 
-              auto it = params.find("name");
+              std::smatch m;
 
-              if (it != params.end()) {
+              if (std::regex_match(header, m, re_content_disposition)) {
 
-                file_.name = it->second;
+                Params params;
 
-              } else {
-
-                is_valid_ = false;
-
-                return false;
-
-              }
+                parse_disposition_params(m[1], params);
 
 
 
-              it = params.find("filename");
+                auto it = params.find("name");
 
-              if (it != params.end()) { file_.filename = it->second; }
+                if (it != params.end()) {
 
+                  file_.name = it->second;
 
+                } else {
 
-              it = params.find("filename*");
+                  is_valid_ = false;
 
-              if (it != params.end()) {
+                  return false;
 
-                // Only allow UTF-8 enconnding...
-
-                static const boost::regex re_rfc5987_encoding(
-
-                    R"~(^UTF-8''(.+?)$)~", boost::regex_constants::icase);
+                }
 
 
 
-                boost::smatch m2;
+                it = params.find("filename");
 
-                if (boost::regex_match(it->second, m2, re_rfc5987_encoding)) {
+                if (it != params.end()) { file_.filename = it->second; }
+
+
+
+                it = params.find("filename*");
+
+                if (it != params.end()) {
+
+                  // Only allow UTF-8 enconnding...
+
+                  static const std::regex re_rfc5987_encoding(
+
+                      R"~(^UTF-8''(.+?)$)~", std::regex_constants::icase);
+
+
+
+                  std::smatch m2;
+
+                  if (std::regex_match(it->second, m2, re_rfc5987_encoding)) {
 
                     file_.filename = decode_url(m2[1], false); // override...
 
-                } else {
+                  } else {
 
                     is_valid_ = false;
 
                     return false;
 
+                  }
+
                 }
 
               }
 
-            }
+            #else
+
+              static const boost::regex re_content_disposition(
+
+                  R"~(^Content-Disposition:\s*form-data;\s*(.*)$)~",
+
+                  boost::regex_constants::icase);
+
+              boost::smatch m;
+
+              if (boost::regex_match(header, m, re_content_disposition)) {
+
+                Params params;
+
+                parse_disposition_params(m[1], params);
+
+
+
+                auto it = params.find("name");
+
+                if (it != params.end()) {
+
+                  file_.name = it->second;
+
+                } else {
+
+                  is_valid_ = false;
+
+                  return false;
+
+                }
+
+
+
+                it = params.find("filename");
+
+                if (it != params.end()) { file_.filename = it->second; }
+
+
+
+                it = params.find("filename*");
+
+                if (it != params.end()) {
+
+                  // Only allow UTF-8 enconnding...
+
+                  static const boost::regex re_rfc5987_encoding(
+
+                      R"~(^UTF-8''(.+?)$)~", boost::regex_constants::icase);
+
+
+
+                  boost::smatch m2;
+
+                  if (boost::regex_match(it->second, m2, re_rfc5987_encoding)) {
+
+                      file_.filename = decode_url(m2[1], false); // override...
+
+                  } else {
+
+                      is_valid_ = false;
+
+                      return false;
+
+                  }
+
+                }
+
+              }
+
+            #endif
 
           }
 
@@ -10260,6 +10656,62 @@ inline bool parse_www_authenticate(const Response &res,
 
   auto auth_key = is_proxy ? "Proxy-Authenticate" : "WWW-Authenticate";
 
+#if __GNUC__ >= 7
+
+  if (res.has_header(auth_key)) {
+
+    static auto re = std::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
+
+    auto s = res.get_header_value(auth_key);
+
+    auto pos = s.find(' ');
+
+    if (pos != std::string::npos) {
+
+      auto type = s.substr(0, pos);
+
+      if (type == "Basic") {
+
+        return false;
+
+      } else if (type == "Digest") {
+
+        s = s.substr(pos + 1);
+
+        auto beg = std::sregex_iterator(s.begin(), s.end(), re);
+
+        for (auto i = beg; i != std::sregex_iterator(); ++i) {
+
+          const auto &m = *i;
+
+          auto key = s.substr(static_cast<size_t>(m.position(1)),
+
+                              static_cast<size_t>(m.length(1)));
+
+          auto val = m.length(2) > 0
+
+                         ? s.substr(static_cast<size_t>(m.position(2)),
+
+                                    static_cast<size_t>(m.length(2)))
+
+                         : s.substr(static_cast<size_t>(m.position(3)),
+
+                                    static_cast<size_t>(m.length(3)));
+
+          auth[key] = val;
+
+        }
+
+        return true;
+
+      }
+
+    }
+
+  }
+
+#else
+
   if (res.has_header(auth_key)) {
 
       static auto re = boost::regex(R"~((?:(?:,\s*)?(.+?)=(?:"(.*?)"|([^,]*))))~");
@@ -10313,6 +10765,8 @@ inline bool parse_www_authenticate(const Response &res,
       }
 
   }
+
+#endif
 
   return false;
 
@@ -10456,9 +10910,25 @@ inline void hosted_at(const std::string &hostname,
 
 
 
-//const static boost::regex re(R"((?:(https?):)?(?://(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+#if __GNUC__ >= 7
 
+inline std::string append_query_params(const std::string &path,
 
+                                        const Params &params) {
+
+  std::string path_with_query = path;
+
+  const static std::regex re("[^?]+\\?.*");
+
+  auto delm = std::regex_match(path, re) ? '&' : '?';
+
+  path_with_query += delm + detail::params_to_query_str(params);
+
+  return path_with_query;
+
+}
+
+#else
 
 inline std::string append_query_params(const std::string &path,
 
@@ -10475,6 +10945,8 @@ inline std::string append_query_params(const std::string &path,
     return path_with_query;
 
 }
+
+#endif
 
 
 
@@ -11210,7 +11682,15 @@ inline PathParamsMatcher::PathParamsMatcher(const std::string &pattern) {
 
 inline bool PathParamsMatcher::match(Request &request) const {
 
-  request.matches = boost::smatch();
+  #if __GNUC__ >= 7
+
+    request.matches = std::smatch();
+
+  #else
+
+    request.matches = boost::smatch();
+
+  #endif
 
   request.path_params.clear();
 
@@ -11298,7 +11778,15 @@ inline bool RegexMatcher::match(Request &request) const {
 
   request.path_params.clear();
 
-  return boost::regex_match(request.path, request.matches, regex_);
+  #if __GNUC__ >= 7
+
+    return std::regex_match(request.path, request.matches, regex_);
+
+  #else
+
+    return boost::regex_match(request.path, request.matches, regex_);
+
+  #endif
 
 }
 
@@ -13200,7 +13688,15 @@ Server::process_request(Stream &strm, bool close_connection,
 
                         const std::function<void(Request &)> &setup_request) {
 
-  std::array<char, 2048> buf = {0};
+  #if __GNUC__ >= 7
+
+    std::array<char, 2048> buf{};
+
+  #else
+
+    std::array<char, 2048> buf = {0};
+
+  #endif
 
 
 
@@ -13758,7 +14254,15 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
                                            Response &res) const {
 
-  std::array<char, 2048> buf = {0};
+  #if __GNUC__ >= 7
+
+    std::array<char, 2048> buf{};
+
+  #else
+
+    std::array<char, 2048> buf = {0};
+
+  #endif
 
 
 
@@ -13770,45 +14274,27 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
 
 
-#ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+#if __GNUC__ >= 7
 
-  const static boost::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
+  #ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
 
-#else
+    const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
 
-  const static boost::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
+  #else
 
-#endif
+    const static std::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
 
-
-
-  boost::cmatch m;
-
-  if (!boost::regex_match(line_reader.ptr(), m, re)) {
-
-    return req.method == "CONNECT";
-
-  }
-
-  res.version = std::string(m[1]);
-
-  res.status = std::stoi(std::string(m[2]));
-
-  res.reason = std::string(m[3]);
+  #endif
 
 
 
-  // Ignore '100 Continue'
+    std::cmatch m;
 
-  while (res.status == StatusCode::Continue_100) {
+    if (!std::regex_match(line_reader.ptr(), m, re)) {
 
-    if (!line_reader.getline()) { return false; } // CRLF
+      return req.method == "CONNECT";
 
-    if (!line_reader.getline()) { return false; } // next response line
-
-
-
-    if (!boost::regex_match(line_reader.ptr(), m, re)) { return false; }
+    }
 
     res.version = std::string(m[1]);
 
@@ -13816,13 +14302,89 @@ inline bool ClientImpl::read_response_line(Stream &strm, const Request &req,
 
     res.reason = std::string(m[3]);
 
+
+
+    // Ignore '100 Continue'
+
+    while (res.status == StatusCode::Continue_100) {
+
+      if (!line_reader.getline()) { return false; } // CRLF
+
+      if (!line_reader.getline()) { return false; } // next response line
+
+
+
+      if (!std::regex_match(line_reader.ptr(), m, re)) { return false; }
+
+      res.version = std::string(m[1]);
+
+      res.status = std::stoi(std::string(m[2]));
+
+      res.reason = std::string(m[3]);
+
+    }
+
+
+
+    return true;
+
+#else
+
+  #ifdef CPPHTTPLIB_ALLOW_LF_AS_LINE_TERMINATOR
+
+    const static boost::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r?\n");
+
+  #else
+
+    const static boost::regex re("(HTTP/1\\.[01]) (\\d{3})(?: (.*?))?\r\n");
+
+  #endif
+
+
+
+    boost::cmatch m;
+
+    if (!boost::regex_match(line_reader.ptr(), m, re)) {
+
+      return req.method == "CONNECT";
+
+    }
+
+    res.version = std::string(m[1]);
+
+    res.status = std::stoi(std::string(m[2]));
+
+    res.reason = std::string(m[3]);
+
+
+
+    // Ignore '100 Continue'
+
+    while (res.status == StatusCode::Continue_100) {
+
+      if (!line_reader.getline()) { return false; } // CRLF
+
+      if (!line_reader.getline()) { return false; } // next response line
+
+
+
+      if (!boost::regex_match(line_reader.ptr(), m, re)) { return false; }
+
+      res.version = std::string(m[1]);
+
+      res.status = std::stoi(std::string(m[2]));
+
+      res.reason = std::string(m[3]);
+
+    }
+
+
+
+    return true;
+
+#endif
+
   }
-
-
-
-  return true;
-
-}
 
 
 
@@ -14220,13 +14782,29 @@ inline bool ClientImpl::redirect(Request &req, Response &res, Error &error) {
 
 
 
- const static boost::regex re(R"((?:(https?):)?(?://(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+  #if __GNUC__ >= 7
+
+  const static std::regex re(
+
+      R"((?:(https?):)?(?://(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
+
+
+
+  std::smatch m;
+
+  if (!std::regex_match(location, m, re)) { return false; }
+
+  #else
+
+  const static boost::regex re(R"((?:(https?):)?(?://(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)?([^?#]*)(\?[^#]*)?(?:#.*)?)");
 
 
 
   boost::smatch m;
 
   if (!boost::regex_match(location, m, re)) { return false; }
+
+  #endif
 
 
 
@@ -17830,6 +18408,20 @@ inline Client::Client(const std::string &scheme_host_port,
 
                       const std::string &client_key_path) {
 
+  #if __GNUC__ >= 7
+
+  const static std::regex re(
+
+      R"((?:([a-z]+):\/\/)?(?:\[([\d:]+)\]|([^:/?#]+))(?::(\d+))?)");
+
+
+
+  std::smatch m;
+
+  if (std::regex_match(scheme_host_port, m, re)) {
+
+  #else
+
   const static boost::regex re("(?:([a-z]+):\\/\\/)?(?:\\[([\\d:]+)\\]|([^:/?#]+))(?:\\:(\\d+))?");
 
 
@@ -17837,6 +18429,8 @@ inline Client::Client(const std::string &scheme_host_port,
   boost::smatch m;
 
   if (boost::regex_match(scheme_host_port, m, re)) {
+
+  #endif
 
     auto scheme = m[1].str();
 
