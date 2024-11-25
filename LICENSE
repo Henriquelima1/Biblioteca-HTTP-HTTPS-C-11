@@ -30,3 +30,15 @@ SOFTWARE.
 The following modifications were made to the original software by Henriquelima1:
 - Adapted the code for compatibility with Ubuntu 18.04 and Ubuntu 14.04.
 - Ensured compatibility with GCC versions from 4.8 to 7.
+
+### Usage on Ubuntu 14.04
+
+The `boost-regex`, `libnetsnmp` and `libnetsnmpagent` libraries are **only used on Ubuntu 14.04**. They are only needed on this specific version of the operating system, where the project depends on them to function correctly. **On later versions of Ubuntu, these libraries are not used**, and the code will work without external dependencies related to these libraries.
+
+### Licensing
+
+- **boost-regex**: licensed under the [Boost Software License, version 1.0](https://www.boost.org/LICENSE_1_0.txt).
+- **libnetsnmp**: licensed under the [Net-SNMP License](https://github.com/net-snmp/net-snmp/blob/master/COPYING).
+- **libnetsnmpagent**: licensed under the [Net-SNMP License](https://github.com/net-snmp/net-snmp/blob/master/COPYING).
+
+The full license for each library can be found in the links above.
